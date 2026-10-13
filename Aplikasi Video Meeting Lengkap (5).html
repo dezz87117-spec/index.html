@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexusMeet - Video Meeting Lengkap</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PeerJS CDN -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Video lokal diberikan efek cermin (mirroring) agar natural */
+        #localVideo {
+            transform: scaleX(-1);
+            -webkit-transform: scaleX(-1);
+        }
+        
+        /* Video remote tampil normal tanpa efek cermin */
+        #remoteVideo1 {
+            transform: scaleX(1);
+            -webkit-transform: scaleX(1);
+        }
+
+        /* Custom scrollbar untuk Acode & mobile */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.4);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.7);
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-full flex flex-col justify-between selection:bg-indigo-500 selection:text-white">
+
+    <!-- Modal Izin Kamera / Perintah Masuk Awal -->
+    <div id="permissionModal" class="fixed inset-0 bg-slate-950/95 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl text-center space-y-4 my-auto">
+            <div class="w-16 h-16 bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto text-2xl shadow-inner">
+                <i class="fa-solid fa-video"></i>
+            </div>
+            <div>
+                <h2 class="text-xl font-bold text-slate-100">Mulai Ruang Meeting</h2>
+                <p class="text-xs sm:text-sm text-slate-400 mt-1">Aplikasi memerlukan izin akses kamera dan mikrofon perangkat Anda untuk bertatap muka secara real-time.</p>
+            </div>
+            
+            <!-- Tombol Interaktif Utama -->
+            <button onclick="requestCameraPermission()" class="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-semibold py-3.5 rounded-2xl transition-all shadow-lg shadow-indigo-600/30 text-sm">
+                Izinkan Kamera & Masuk Room
+            </button>
+
+            <!-- Tombol Fallback Jika Popup Browser Tertutup / Diabaikan -->
+            <div class="pt-2 border-t border-slate-800">
+                <p class="text-[11px] text-slate-400 mb-2">Popup izin tertutup atau terlewat?</p>
+                <button onclick="requestCameraPermission()" class="w-full bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 font-medium py-2.5 rounded-xl transition-all text-xs border border-slate-700 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-rotate-right text-indigo-400"></i> Klik Paksa Buka Kamera
+                </button>
+            </div>
+
+            <p class="text-[10px] text-slate-500">Pastikan memilih "Izinkan" atau "Allow" saat browser meminta akses.</p>
+        </div>
+    </div>
+
+    <!-- Header dengan ID Room Instan & Tombol Bagikan Link -->
+    <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg sticky top-0 z-40">
+        <div class="flex items-center space-x-3 w-full md:w-auto justify-between md:justify-start">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 p-2.5 rounded-2xl text-white font-bold flex items-center justify-center shadow-lg shadow-indigo-600/30">
+                    <i class="fa-solid fa-video text-base"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base sm:text-lg tracking-tight">NexusMeet</h1>
+                    <p class="text-xs text-slate-400 flex items-center gap-1.5">
+                        <span id="connectionDot" class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span> 
+                        Status: <span id="statusText" class="text-amber-400 font-medium">Menghubungkan Server...</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bagian ID Room Instan & Tombol Salin Tautan Undangan -->
+        <div class="flex items-center bg-slate-950 border border-slate-800 rounded-2xl p-1.5 pl-4 gap-3 shadow-inner w-full md:w-auto justify-between">
+            <div class="flex items-center gap-2 overflow-hidden">
+                <span class="text-xs text-slate-400 font-medium hidden sm:inline">ID Room:</span>
+                <span id="displayRoomId" class="font-mono font-bold text-indigo-400 text-xs sm:text-sm tracking-wider truncate max-w-[130px] sm:max-w-none">Membuat ID Instan...</span>
+            </div>
+            <div class="flex items-center gap-1">
+                <button onclick="copyRoomId()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all">
+                    <i class="fa-solid fa-copy"></i>
+                    <span class="hidden sm:inline">ID</span>
+                </button>
+                <button onclick="copyInviteLink()" class="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/20 whitespace-nowrap">
+                    <i class="fa-solid fa-link"></i>
+                    <span>Salin Link</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-2 w-full md:w-auto justify-end">
+            <button onclick="openGuideModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-all">
+                <i class="fa-solid fa-circle-question text-indigo-400"></i>
+                <span>Panduan</span>
+            </button>
+            <button onclick="openPhoneModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-all">
+                <i class="fa-solid fa-phone text-emerald-400"></i>
+                <span>Telepon</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container dengan Layar Bergulir (Scrollable Layout) -->
+    <main class="flex-1 flex flex-col lg:flex-row p-3 sm:p-5 gap-4 max-w-[1700px] w-full mx-auto overflow-y-auto">
+        
+        <!-- Video Grid & Controls -->
+        <div class="flex-1 flex flex-col gap-4">
+            
+            <!-- Gabung Room Teman Bar -->
+            <div class="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xl">
+                <div>
+                    <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Hubungkan Peserta Lain</h2>
+                    <p class="text-xs text-slate-500">Masukkan ID Room teman Anda atau klik tautan undangannya.</p>
+                </div>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <input type="text" id="targetRoomInput" placeholder="Tempel ID Room Teman..." class="bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-200 focus:outline-none focus:border-indigo-500 flex-1 sm:w-72">
+                    <button onclick="joinSpecificRoom()" class="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-md shadow-indigo-600/30 whitespace-nowrap">
+                        Gabung Panggilan
+                    </button>
+                </div>
+            </div>
+
+            <!-- Video Grid Bergulir (Scrollable Video Container) -->
+            <div id="videoGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-2">
+                
+                <!-- Local Video (Arah Cermin Natural) -->
+                <div class="relative bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col items-center justify-center min-h-[260px] sm:min-h-[300px] group">
+                    <div class="absolute inset-0 flex items-center justify-center bg-slate-950">
+                        <div id="localAvatar" class="flex flex-col items-center justify-center space-y-2">
+                            <div class="w-16 h-16 rounded-full bg-indigo-600/30 border border-indigo-500/50 flex items-center justify-center text-indigo-300 font-bold text-xl shadow-inner">
+                                SAYA
+                            </div>
+                            <span class="text-xs text-slate-400 font-medium">Kamera Belum Aktif</span>
+                            <button onclick="requestCameraPermission()" class="mt-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] px-3 py-1.5 rounded-xl shadow">Aktifkan Kamera</button>
+                        </div>
+                        <video id="localVideo" autoplay muted playsinline class="w-full h-full object-cover hidden"></video>
+                    </div>
+                    <div class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-2 border border-slate-800 z-10">
+                        <i id="localMicIndicator" class="fa-solid fa-microphone text-emerald-400"></i>
+                        <span>Anda (Host)</span>
+                    </div>
+                </div>
+
+                <!-- Remote Peer Video (Arah Pandang Normal / Tidak Berlawanan) -->
+                <div id="remotePeerCard1" class="relative bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-800 flex flex-col items-center justify-center min-h-[260px] sm:min-h-[300px]">
+                    <div class="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-950">
+                        <div id="remoteAvatar1" class="flex flex-col items-center justify-center space-y-2">
+                            <div class="w-16 h-16 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 font-bold text-xl">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <span class="text-xs text-slate-500 font-medium">Menunggu Peserta Lain Bergabung...</span>
+                        </div>
+                        <video id="remoteVideo1" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+                    </div>
+                    <div class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-2 border border-slate-800 z-10">
+                        <i id="remoteMic1" class="fa-solid fa-microphone text-emerald-400"></i>
+                        <span id="remoteName1">Peserta Lain</span>
+                    </div>
+                    <!-- Admin Mute Button -->
+                    <div class="absolute top-3 right-3 z-10">
+                        <button onclick="adminMutePeer()" class="bg-rose-500/80 hover:bg-rose-600 text-white px-2.5 py-1 rounded-lg text-xs font-medium backdrop-blur-md shadow-lg transition-all flex items-center gap-1.5">
+                            <i class="fa-solid fa-microphone-slash"></i> Mute Admin
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Kontrol Audio / Video Bawah -->
+            <div class="bg-slate-900/90 backdrop-blur-md border border-slate-800 p-3 rounded-2xl flex items-center justify-center gap-3 shadow-2xl">
+                <button id="micBtn" onclick="toggleMic()" class="bg-slate-800 hover:bg-slate-700 active:scale-95 text-white w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-md group relative">
+                    <i id="micIcon" class="fa-solid fa-microphone text-base"></i>
+                    <span class="absolute -top-10 bg-slate-900 text-slate-200 text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow border border-slate-800">Mikrofon</span>
+                </button>
+
+                <button id="camBtn" onclick="toggleCamera()" class="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-md group relative">
+                    <i id="camIcon" class="fa-solid fa-video text-base"></i>
+                    <span class="absolute -top-10 bg-slate-900 text-slate-200 text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap shadow border border-slate-800">Kamera</span>
+                </button>
+
+                <button onclick="leaveMeeting()" class="bg-rose-600 hover:bg-rose-700 active:scale-95 text-white px-5 h-12 rounded-2xl flex items-center justify-center gap-2 font-semibold text-sm transition-all shadow-lg shadow-rose-600/30">
+                    <i class="fa-solid fa-phone-slash"></i>
+                    <span>Keluar</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Sidebar Peserta & Chat dengan Area Bergulir -->
+        <div class="w-full lg:w-80 bg-slate-900/80 backdrop-blur-md border border-slate-800 rounded-2xl flex flex-col h-72 lg:h-[auto] max-h-[500px] lg:max-h-none overflow-hidden shadow-xl">
+            <div class="flex border-b border-slate-800 text-xs font-semibold shrink-0">
+                <button onclick="switchTab('participants')" id="tabParticipantsBtn" class="flex-1 py-3 text-indigo-400 border-b-2 border-indigo-500 bg-slate-900/50 transition-all">Peserta</button>
+                <button onclick="switchTab('chat')" id="tabChatBtn" class="flex-1 py-3 text-slate-400 hover:text-slate-200 transition-all">Chat</button>
+            </div>
+
+            <!-- Tab Peserta (Scrollable) -->
+            <div id="participantsTabContent" class="flex-1 p-3 overflow-y-auto space-y-2">
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/40 text-xs border border-slate-800">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center font-bold text-white text-[10px]">S</div>
+                        <div>
+                            <p class="font-medium text-slate-200">Anda (Host)</p>
+                            <span class="text-[10px] text-indigo-400">Pembuat Room</span>
+                        </div>
+                    </div>
+                    <i id="listLocalMic" class="fa-solid fa-microphone text-emerald-400"></i>
+                </div>
+
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/40 text-xs border border-slate-800">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center font-bold text-slate-300 text-[10px]">P</div>
+                        <div>
+                            <p class="font-medium text-slate-200">Peserta Lain</p>
+                            <span class="text-[10px] text-slate-400">Terhubung</span>
+                        </div>
+                    </div>
+                    <i id="listPeerMic" class="fa-solid fa-microphone text-emerald-400"></i>
+                </div>
+            </div>
+
+            <!-- Tab Chat (Scrollable) -->
+            <div id="chatTabContent" class="flex-1 p-3 overflow-y-auto space-y-3 hidden flex-col justify-between">
+                <div class="space-y-2 text-xs overflow-y-auto flex-1 pr-1" id="chatMessages">
+                    <div class="bg-slate-800/50 p-2.5 rounded-xl border border-slate-800">
+                        <p class="font-semibold text-indigo-400">Sistem</p>
+                        <p class="text-slate-300">Selamat datang di ruang meeting!</p>
+                    </div>
+                </div>
+                <div class="mt-2 flex gap-1.5 pt-2 border-t border-slate-800 shrink-0">
+                    <input type="text" id="chatInput" placeholder="Ketik pesan..." class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                    <button onclick="sendChatMessage()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs transition-all shadow">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Modal Panduan Cara Kerja -->
+    <div id="guideModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative my-auto">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-600/25 border border-indigo-500/40 text-indigo-400 flex items-center justify-center">
+                        <i class="fa-solid fa-book-open"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-slate-100">Panduan & Cara Kerja</h3>
+                        <p class="text-xs text-slate-400">Cara mudah mengundang dan bergabung</p>
+                    </div>
+                </div>
+                <button onclick="closeGuideModal()" class="text-slate-400 hover:text-white p-2 rounded-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-3 text-xs sm:text-sm text-slate-300 bg-slate-950/60 p-4 rounded-2xl border border-slate-800 mb-5 leading-relaxed max-h-[50vh] overflow-y-auto">
+                <p><b>1. Salin Link Undangan:</b> Klik tombol "Salin Link" di atas lalu bagikan ke WhatsApp atau media sosial teman Anda.</p>
+                <p><b>2. Atasi Izin Kamera:</b> Jika popup izin tertutup, gunakan tombol "Klik Paksa Buka Kamera" di layar utama.</p>
+                <p><b>3. Bergabung Otomatis:</b> Peserta yang membuka link tersebut akan langsung otomatis terhubung ke room Anda.</p>
+                <p><b>4. Kamera & Orientasi:</b> Video Anda menggunakan efek cermin yang natural, sedangkan peserta lain tampil normal.</p>
+            </div>
+
+            <button onclick="closeGuideModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition-all shadow-lg text-sm">
+                Mengerti
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal Telepon -->
+    <div id="phoneModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl relative my-auto">
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                        <i class="fa-solid fa-phone-volume"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-base text-slate-100">Gabung via Telepon</h3>
+                        <p class="text-xs text-slate-400">Sambungkan audio via panggilan suara seluler</p>
+                    </div>
+                </div>
+                <button onclick="closePhoneModal()" class="text-slate-400 hover:text-white p-2 rounded-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-sm bg-slate-950/60 p-4 rounded-2xl border border-slate-800 mb-5">
+                <div>
+                    <span class="text-xs text-slate-400 block mb-1">Nomor Akses Utama:</span>
+                    <p class="font-mono font-bold text-emerald-400 text-lg tracking-wide">+62 21 5080 9000</p>
+                </div>
+                <div class="pt-2 border-t border-slate-800">
+                    <span class="text-xs text-slate-400 block mb-1">PIN Akses Ruangan:</span>
+                    <p id="phonePinDisplay" class="font-mono font-bold text-indigo-400 text-base tracking-widest bg-slate-900 p-2.5 rounded-xl text-center">8923#</p>
+                </div>
+            </div>
+
+            <button onclick="closePhoneModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl transition-all text-sm">
+                Tutup
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toastNotification" class="fixed bottom-6 right-6 bg-slate-900 border border-slate-800 text-slate-200 px-4 py-3 rounded-2xl shadow-2xl z-50 transform translate-y-24 opacity-0 transition-all duration-300 flex items-center gap-3 max-w-xs">
+        <div class="text-emerald-400 shrink-0">
+            <i class="fa-solid fa-circle-check text-lg"></i>
+        </div>
+        <p id="toastText" class="text-xs font-medium"></p>
+    </div>
+
+    <script>
+        let peer = null;
+        let localStream = null;
+        let currentPeerCall = null;
+        let isMicActive = true;
+        let isCameraActive = true;
+        let myPeerId = null;
+        let pendingTargetRoom = null;
+        let isPeerInitialized = false;
+
+        // Cek apakah ada parameter URL ?room=XYZ saat halaman dimuat
+        function checkUrlForRoom() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const roomParam = urlParams.get('room');
+            if (roomParam) {
+                pendingTargetRoom = roomParam.trim();
+                document.getElementById('targetRoomInput').value = pendingTargetRoom;
+            }
+        }
+        checkUrlForRoom();
+
+        // Generate ID Room secara instan saat halaman dibuka
+        function generateInstantRoomId() {
+            const randomPart = Math.random().toString(36).substring(2, 8);
+            const timePart = Date.now().toString(36).slice(-4);
+            return `nexus-${timePart}-${randomPart}`;
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        myPeerId = generateInstantRoomId();
+        
+        document.getElementById('displayRoomId').innerText = myPeerId;
+        document.getElementById('phonePinDisplay').innerText = myPeerId.substring(6, 10).toUpperCase() + '#';
+
+        // Fungsi Meminta Izin Kamera dengan Penanganan Error Aman & Fallback Interaktif
+        async function requestCameraPermission() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Browser Anda tidak mendukung akses media getUserMedia.");
+                }
+
+                showNotification("Meminta akses kamera & mikrofon...");
+
+                localStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, 
+                    audio: true 
+                });
+
+                const videoEl = document.getElementById('localVideo');
+                const avatarEl = document.getElementById('localAvatar');
+                
+                videoEl.srcObject = localStream;
+                videoEl.classList.remove('hidden');
+                avatarEl.classList.add('hidden');
+                
+                document.getElementById('permissionModal').classList.add('hidden');
+                showNotification("Izin kamera diberikan. Menghubungkan server peer...");
+
+                if (!isPeerInitialized) {
+                    initPeerJSWithId(myPeerId);
+                }
+            } catch (err) {
+                console.error("Gagal mendapat izin media:", err);
+                // Tampilkan pesan panduan jika izin diblokir
+                showNotification("Akses ditolak. Periksa pengaturan izin situs di browser Chrome Anda.");
+                // Tetap tutup modal awal agar tombol fallback di tampilan utama bisa digunakan
+                document.getElementById('permissionModal').classList.add('hidden');
+            }
+        }
+
+        function initPeerJSWithId(customId) {
+            try {
+                isPeerInitialized = true;
+                peer = new Peer(customId, {
+                    debug: 2
+                });
+
+                peer.on('open', (id) => {
+                    myPeerId = id;
+                    document.getElementById('displayRoomId').innerText = id;
+                    document.getElementById('connectionDot').className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+                    document.getElementById('statusText').className = "text-emerald-400 font-medium";
+                    document.getElementById('statusText').innerText = "Siap (Online)";
+                    showNotification("Ruang meeting online & siap digunakan!");
+
+                    if (pendingTargetRoom && pendingTargetRoom !== myPeerId) {
+                        setTimeout(() => {
+                            autoJoinRoom(pendingTargetRoom);
+                        }, 1200);
+                    }
+                });
+
+                peer.on('call', (call) => {
+                    currentPeerCall = call;
+                    showNotification("Menerima panggilan masuk dari peserta...");
+                    
+                    // Pastikan localStream ada (jika belum diizinkan, sediakan stream kosong agar tidak crash)
+                    if (!localStream) {
+                        navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then(stream => {
+                            localStream = stream;
+                            document.getElementById('localVideo').srcObject = stream;
+                            document.getElementById('localVideo').classList.remove('hidden');
+                            document.getElementById('localAvatar').classList.add('hidden');
+                            call.answer(localStream);
+                        }).catch(() => {
+                            call.answer();
+                        });
+                    } else {
+                        call.answer(localStream);
+                    }
+
+                    call.on('stream', (remoteStream) => {
+                        displayRemoteStream(remoteStream);
+                    });
+
+                    call.on('close', () => {
+                        resetRemoteStream();
+                    });
+                });
+
+                peer.on('error', (err) => {
+                    console.error("Peer error:", err);
+                    if (err.type === 'unavailable-id') {
+                        fallbackRandomPeer();
+                    } else {
+                        showNotification("Koneksi server P2P bermasalah.");
+                    }
+                });
+            } catch (e) {
+                console.error("Inisialisasi PeerJS gagal:", e);
+                showNotification("Gagal memuat modul PeerJS.");
+            }
+        }
+
+        function fallbackRandomPeer() {
+            peer = new Peer();
+            peer.on('open', (id) => {
+                myPeerId = id;
+                document.getElementById('displayRoomId').innerText = id;
+                document.getElementById('connectionDot').className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+                document.getElementById('statusText').className = "text-emerald-400 font-medium";
+                document.getElementById('statusText').innerText = "Siap (Online)";
+                showNotification("ID Room cadangan berhasil dibuat.");
+                
+                if (pendingTargetRoom) {
+                    setTimeout(() => autoJoinRoom(pendingTargetRoom), 1000);
+                }
+            });
+            peer.on('call', (call) => {
+                currentPeerCall = call;
+                call.answer(localStream);
+                call.on('stream', (stream) => displayRemoteStream(stream));
+                call.on('close', () => resetRemoteStream());
+            });
+        }
+
+        function autoJoinRoom(targetId) {
+            if (!peer) return;
+            showNotification("Otomatis bergabung ke ruangan " + targetId + "...");
+            try {
+                const call = peer.call(targetId, localStream || new MediaStream());
+                if (call) {
+                    currentPeerCall = call;
+                    call.on('stream', (remoteStream) => {
+                        displayRemoteStream(remoteStream);
+                    });
+                    call.on('close', () => {
+                        resetRemoteStream();
+                    });
+                }
+            } catch (err) {
+                console.error("Gagal auto-call:", err);
+            }
+        }
+
+        function joinSpecificRoom() {
+            const targetId = document.getElementById('targetRoomInput').value.trim();
+            if (!targetId) {
+                showNotification("Masukkan ID Room terlebih dahulu!");
+                return;
+            }
+            if (myPeerId && targetId === myPeerId) {
+                showNotification("Tidak dapat memanggil ID Anda sendiri.");
+                return;
+            }
+            if (!peer) {
+                showNotification("Koneksi server belum siap.");
+                return;
+            }
+
+            showNotification("Menghubungkan ke ruangan...");
+            try {
+                const call = peer.call(targetId, localStream || new MediaStream());
+                if (call) {
+                    currentPeerCall = call;
+                    call.on('stream', (remoteStream) => {
+                        displayRemoteStream(remoteStream);
+                    });
+                    call.on('close', () => {
+                        resetRemoteStream();
+                    });
+                }
+            } catch (err) {
+                console.error("Gagal melakukan call:", err);
+                showNotification("Gagal terhubung ke ID Room tersebut.");
+            }
+        }
+
+        function displayRemoteStream(stream) {
+            const remoteVideo = document.getElementById('remoteVideo1');
+            const remoteAvatar = document.getElementById('remoteAvatar1');
+            
+            remoteVideo.srcObject = stream;
+            remoteVideo.classList.remove('hidden');
+            remoteAvatar.classList.add('hidden');
+            showNotification("Berhasil terhubung dengan peserta lain!");
+        }
+
+        function resetRemoteStream() {
+            const remoteVideo = document.getElementById('remoteVideo1');
+            const remoteAvatar = document.getElementById('remoteAvatar1');
+            remoteVideo.srcObject = null;
+            remoteVideo.classList.add('hidden');
+            remoteAvatar.classList.remove('hidden');
+            showNotification("Peserta lain telah meninggalkan panggilan.");
+        }
+
+        function copyRoomId() {
+            if (!myPeerId) {
+                showNotification("ID Room belum siap.");
+                return;
+            }
+            copyTextToClipboard(myPeerId, "ID Room berhasil disalin!");
+        }
+
+        function copyInviteLink() {
+            if (!myPeerId) {
+                showNotification("ID Room belum siap.");
+                return;
+            }
+            const baseUrl = window.location.href.split('?')[0];
+            const inviteLink = `${baseUrl}?room=${myPeerId}`;
+            copyTextToClipboard(inviteLink, "Link undangan berhasil disalin! Bagikan ke teman.");
+        }
+
+        function copyTextToClipboard(text, successMsg) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(() => {
+                    showNotification(successMsg);
+                }).catch(() => {
+                    fallbackCopyText(text, successMsg);
+                });
+            } else {
+                fallbackCopyText(text, successMsg);
+            }
+        }
+
+        function fallbackCopyText(text, successMsg) {
+            const dummy = document.createElement('textarea');
+            dummy.value = text;
+            document.body.appendChild(dummy);
+            dummy.select();
+            try {
+                document.execCommand('copy');
+                showNotification(successMsg);
+            } catch (err) {
+                showNotification("Gagal menyalin teks.");
+            }
+            document.body.removeChild(dummy);
+        }
+
+        function toggleMic() {
+            if (!localStream) {
+                requestCameraPermission();
+                return;
+            }
+            isMicActive = !isMicActive;
+            const btn = document.getElementById('micBtn');
+            const icon = document.getElementById('micIcon');
+            const listMic = document.getElementById('listLocalMic');
+
+            if (localStream.getAudioTracks().length > 0) {
+                localStream.getAudioTracks()[0].enabled = isMicActive;
+            }
+
+            if (isMicActive) {
+                btn.className = "bg-slate-800 hover:bg-slate-700 active:scale-95 text-white w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-md group relative";
+                icon.className = "fa-solid fa-microphone text-base";
+                listMic.className = "fa-solid fa-microphone text-emerald-400";
+                showNotification("Mikrofon diaktifkan.");
+            } else {
+                btn.className = "bg-rose-600 hover:bg-rose-700 active:scale-95 text-white w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-md group relative";
+                icon.className = "fa-solid fa-microphone-slash text-base";
+                listMic.className = "fa-solid fa-microphone-slash text-rose-400";
+                showNotification("Mikrofon dimatikan.");
+            }
+        }
+
+        function toggleCamera() {
+            if (!localStream) {
+                requestCameraPermission();
+                return;
+            }
+            isCameraActive = !isCameraActive;
+            const btn = document.getElementById('camBtn');
+            const icon = document.getElementById('camIcon');
+            const videoEl = document.getElementById('localVideo');
+            const avatarEl = document.getElementById('localAvatar');
+
+            if (localStream.getVideoTracks().length > 0) {
+                localStream.getVideoTracks()[0].enabled = isCameraActive;
+            }
+
+            if (isCameraActive) {
+                btn.className = "bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-md group relative";
+                icon.className = "fa-solid fa-video text-base";
+                videoEl.classList.remove('hidden');
+                avatarEl.classList.add('hidden');
+                showNotification("Kamera diaktifkan.");
+            } else {
+                btn.className = "bg-slate-800 hover:bg-slate-700 active:scale-95 text-white w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-md group relative";
+                icon.className = "fa-solid fa-video-slash text-base";
+                videoEl.classList.add('hidden');
+                avatarEl.classList.remove('hidden');
+                showNotification("Kamera dimatikan.");
+            }
+        }
+
+        function adminMutePeer() {
+            document.getElementById('listPeerMic').className = "fa-solid fa-microphone-slash text-rose-400";
+            document.getElementById('remoteMic1').className = "fa-solid fa-microphone-slash text-rose-400";
+            showNotification("Admin membisukan suara peserta lain.");
+        }
+
+        function openGuideModal() { document.getElementById('guideModal').classList.remove('hidden'); }
+        function closeGuideModal() { document.getElementById('guideModal').classList.add('hidden'); }
+        function openPhoneModal() { document.getElementById('phoneModal').classList.remove('hidden'); }
+        function closePhoneModal() { document.getElementById('phoneModal').classList.add('hidden'); }
+
+        function switchTab(tabName) {
+            const partTab = document.getElementById('participantsTabContent');
+            const chatTab = document.getElementById('chatTabContent');
+            const partBtn = document.getElementById('tabParticipantsBtn');
+            const chatBtn = document.getElementById('tabChatBtn');
+
+            if (tabName === 'participants') {
+                partTab.classList.remove('hidden');
+                chatTab.classList.add('hidden');
+                partBtn.className = "flex-1 py-3 text-indigo-400 border-b-2 border-indigo-500 bg-slate-900/50 transition-all";
+                chatBtn.className = "flex-1 py-3 text-slate-400 hover:text-slate-200 transition-all";
+            } else {
+                partTab.classList.add('hidden');
+                chatTab.classList.remove('hidden');
+                chatTab.style.display = 'flex';
+                chatBtn.className = "flex-1 py-3 text-indigo-400 border-b-2 border-indigo-500 bg-slate-900/50 transition-all";
+                partBtn.className = "flex-1 py-3 text-slate-400 hover:text-slate-200 transition-all";
+            }
+        }
+
+        function sendChatMessage() {
+            const input = document.getElementById('chatInput');
+            const container = document.getElementById('chatMessages');
+            if (input.value.trim() !== "") {
+                const msg = document.createElement('div');
+                msg.className = "bg-indigo-950/40 border border-indigo-500/20 p-2.5 rounded-xl";
+                msg.innerHTML = `<p class="font-semibold text-indigo-400">Anda</p><p class="text-slate-200">${escapeHtml(input.value)}</p>`;
+                container.appendChild(msg);
+                input.value = "";
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function escapeHtml(text) {
+            const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return text.replace(/[&<>"']/g, m => map[m]);
+        }
+
+        function showNotification(message) {
+            const toast = document.getElementById('toastNotification');
+            document.getElementById('toastText').innerText = message;
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+            setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3500);
+        }
+
+        function leaveMeeting() {
+            if (confirm("Keluar dari meeting?")) {
+                if (localStream) {
+                    localStream.getTracks().forEach(track => track.stop());
+                }
+                if (peer) peer.destroy();
+                window.location.href = window.location.pathname;
+            }
+        }
+    </script>
+</body>
+</html>
